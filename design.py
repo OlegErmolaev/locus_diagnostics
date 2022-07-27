@@ -192,10 +192,19 @@ class Ui_MainWindow(object):
         self.plotLayout.setContentsMargins(0, 0, 0, 0)
         self.plotLayout.setObjectName("plotLayout")
         self.tabWidget.addTab(self.plot_tab, "")
+        self.tab = QtWidgets.QWidget()
+        self.tab.setObjectName("tab")
+        self.gridLayoutWidget = QtWidgets.QWidget(self.tab)
+        self.gridLayoutWidget.setGeometry(QtCore.QRect(0, 0, 791, 381))
+        self.gridLayoutWidget.setObjectName("gridLayoutWidget")
+        self.MPLLayout = QtWidgets.QGridLayout(self.gridLayoutWidget)
+        self.MPLLayout.setContentsMargins(0, 0, 0, 0)
+        self.MPLLayout.setObjectName("MPLLayout")
+        self.tabWidget.addTab(self.tab, "")
         MainWindow.setCentralWidget(self.centralwidget)
 
         self.retranslateUi(MainWindow)
-        self.tabWidget.setCurrentIndex(0)
+        self.tabWidget.setCurrentIndex(2)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
     def retranslateUi(self, MainWindow):
@@ -219,3 +228,4 @@ class Ui_MainWindow(object):
         self.label_7.setText(_translate("MainWindow", "Yaw:"))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.main_tab), _translate("MainWindow", "Info"))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.plot_tab), _translate("MainWindow", "Plots"))
+        self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab), _translate("MainWindow", "Page"))

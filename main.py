@@ -2,11 +2,15 @@
 # -*- coding: utf-8 -*-
 import sys
 from PyQt5 import QtWidgets, QtCore
+from PyQt5.QtWidgets import QSizePolicy
 from PyQt5.Qt import QThread
+from PyQt5.QtCore import QTimer
 import design
 from time import sleep, time
 from gs_lps import us_nav
 import pyqtgraph as pg
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
+from matplotlib.pyplot import subplots, tight_layout, colorbar
 
 
 class DataHandler(QtCore.QObject):
@@ -14,7 +18,7 @@ class DataHandler(QtCore.QObject):
 
     def __init__(self):
         super().__init__()
-        self.nav = us_nav("/dev/serial0", debug=False)
+        self.nav = us_nav("/dev/serial0", debug=True)
         self.nav.start()
 
     def run(self):
@@ -28,6 +32,13 @@ class DataHandler(QtCore.QObject):
 
     def kill(self):
         self.nav.stop()
+
+
+class MplCanvas(FigureCanvasQTAgg):
+    def __init__(self, parent=None, width=5, height=4, dpi=100):
+        self.fig, ((self.ax2, self.ax3), (self.ax1, self.ax4)) = subplots(nrows=2, ncols=2)
+        tight_layout()
+        super(MplCanvas, self).__init__(self.fig)
 
 
 class Core(QtWidgets.QMainWindow, design.Ui_MainWindow):
@@ -64,6 +75,23 @@ class Core(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.plot4_data = [1000]
 
         self.update_count = 0
+        self.update_count_mpl = 0
+
+        self.sensors_plot = MplCanvas(self, width=10, height=10, dpi=100)
+        self.MPLLayout.addWidget(self.sensors_plot, 1, 0)
+
+        self.strength1_plot_data = [0, 1000]
+        self.strength2_plot_data = [0, 1000]
+        self.strength3_plot_data = [0, 1000]
+        self.strength4_plot_data = [0, 1000]
+        self.strength_x_data = [0, 10.5]
+        self.strength_y_data = [0, 10.5]
+
+        self.update_mpl_timer = QTimer()
+        self.update_mpl_timer.timeout.connect(self.mpl_redraw)
+        self.update_mpl_timer.setInterval(2500)
+        self.update_mpl_timer.start()
+        self._first_render = True
 
     @staticmethod
     def create_plot():
@@ -72,7 +100,6 @@ class Core(QtWidgets.QMainWindow, design.Ui_MainWindow):
         plot.showGrid(x=True, y=True)
         plot.setXRange(0, 30, 0)
         plot.setYRange(-50, 1100, 0)
-        # plot.setAutoVisible(y=True)
         plot.setMouseEnabled(x=False, y=False)
         return plot
 
@@ -139,7 +166,6 @@ class Core(QtWidgets.QMainWindow, design.Ui_MainWindow):
             self.strength3.setText("%d" % strengths[2])
             self.strength4.setText("%d" % strengths[3])
 
-
             if strengths[0] > max(self.plot1_data):
                 self.plot1.setYRange(-50, strengths[0] + 100, 0)
             if strengths[1] > max(self.plot2_data):
@@ -156,23 +182,42 @@ class Core(QtWidgets.QMainWindow, design.Ui_MainWindow):
 
             self.current_time = time()
             self.time_data.append(self.current_time - self.zero_time)
-            maxRange = 30
-            if (self.current_time - self.zero_time) // maxRange > self.update_count:
+            max_range = 30
+            if (self.current_time - self.zero_time) // max_range > self.update_count:
                 self.update_count += 1
                 self.plot1.setXRange(self.current_time - self.zero_time,
-                                     self.current_time - self.zero_time + maxRange, 0)
+                                     self.current_time - self.zero_time + max_range, 0)
                 self.plot2.setXRange(self.current_time - self.zero_time,
-                                     self.current_time - self.zero_time + maxRange, 0)
+                                     self.current_time - self.zero_time + max_range, 0)
                 self.plot3.setXRange(self.current_time - self.zero_time,
-                                     self.current_time - self.zero_time + maxRange, 0)
+                                     self.current_time - self.zero_time + max_range, 0)
                 self.plot4.setXRange(self.current_time - self.zero_time,
-                                     self.current_time - self.zero_time + maxRange, 0)
+                                     self.current_time - self.zero_time + max_range, 0)
 
             pen = pg.mkPen(color=(255, 0, 0))
             self.plot1.plot(self.time_data, self.plot1_data, pen=pen)
             self.plot2.plot(self.time_data, self.plot2_data, pen=pen)
             self.plot3.plot(self.time_data, self.plot3_data, pen=pen)
             self.plot4.plot(self.time_data, self.plot4_data, pen=pen)
+
+            if pos is not None and (self.current_time - self.zero_time) // 240 < self.update_count_mpl:
+                # if we're working more than 4 mins clear our plots
+                self.strength_x_data.append(pos[0])
+                self.strength_y_data.append(pos[1])
+                max_value_amp = 1000
+                self.strength1_plot_data.append(min(strengths[0], max_value_amp))
+                self.strength2_plot_data.append(min(strengths[1], max_value_amp))
+                self.strength3_plot_data.append(min(strengths[2], max_value_amp))
+                self.strength4_plot_data.append(min(strengths[3], max_value_amp))
+            else:
+                if pos is not None:
+                    self.update_count_mpl += 1
+                    self.strength1_plot_data = [0, 1000]
+                    self.strength2_plot_data = [0, 1000]
+                    self.strength3_plot_data = [0, 1000]
+                    self.strength4_plot_data = [0, 1000]
+                    self.strength_x_data = [0, 10.5]
+                    self.strength_y_data = [0, 10.5]
 
         if pos is not None and angles is not None and strengths is not None:
             log = '%.3f %.3f %.3f %.3f %.3f %.3f %d %d %d %d %d %d %d %d' % (x, y, z,
@@ -183,11 +228,33 @@ class Core(QtWidgets.QMainWindow, design.Ui_MainWindow):
             # print(log)
             self.f.write(log)
 
+    def mpl_redraw(self):
+        self.sensors_plot.ax1.cla()
+        self.sensors_plot.ax2.cla()
+        self.sensors_plot.ax3.cla()
+        self.sensors_plot.ax4.cla()
+        im1 = self.sensors_plot.ax1.scatter(self.strength_x_data, self.strength_y_data, c=self.strength1_plot_data,
+                                            cmap="viridis")
+        im2 = self.sensors_plot.ax2.scatter(self.strength_x_data, self.strength_y_data, c=self.strength2_plot_data,
+                                            cmap="viridis")
+        im3 = self.sensors_plot.ax3.scatter(self.strength_x_data, self.strength_y_data, c=self.strength3_plot_data,
+                                            cmap="viridis")
+        im4 = self.sensors_plot.ax4.scatter(self.strength_x_data, self.strength_y_data, c=self.strength4_plot_data,
+                                            cmap="viridis")
+        if self._first_render:
+            self.sensors_plot.fig.colorbar(im1, ax=self.sensors_plot.ax1)
+            self.sensors_plot.fig.colorbar(im2, ax=self.sensors_plot.ax2)
+            self.sensors_plot.fig.colorbar(im3, ax=self.sensors_plot.ax3)
+            self.sensors_plot.fig.colorbar(im4, ax=self.sensors_plot.ax4)
+        self.sensors_plot.draw()
+        self._first_render = False
+
     def closeEvent(self, e):
         print('closing')
         self.locus_thread.terminate()
         self.dataHandler.kill()
         self.f.close()
+        self.update_mpl_timer.stop()
         sys.exit(0)
 
 
